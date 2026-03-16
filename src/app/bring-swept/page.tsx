@@ -271,7 +271,7 @@ export default function BringSweptPage() {
   const pricingTiers = [
     {
       name: "Pilot Program",
-      price: "$45K",
+      price: "$135K",
       period: "/month",
       details: "1 zone  ·  2 crews  ·  3-month trial",
       features: [
@@ -286,7 +286,7 @@ export default function BringSweptPage() {
     },
     {
       name: "City Standard",
-      price: "$150K",
+      price: "$450K",
       period: "/month",
       details: "3-5 zones  ·  6-10 crews  ·  Annual contract",
       features: [
