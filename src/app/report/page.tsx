@@ -6,7 +6,6 @@ import {
   ArrowLeft,
   Camera,
   MapPin,
-  Upload,
   X,
   Navigation,
   AlertTriangle,
@@ -24,137 +23,8 @@ import {
   MapPinned,
   Eye,
 } from "lucide-react";
-
-// ---------------------------------------------------------------------------
-// Mock data — Dallas-area locations
-// ---------------------------------------------------------------------------
-
-interface Report {
-  id: number;
-  location: string;
-  neighborhood: string;
-  timestamp: string;
-  status: "Reported" | "Assigned" | "In Progress" | "Swept";
-  severity: "Minor" | "Moderate" | "Major";
-  description: string;
-  coords: { lat: number; lng: number };
-}
-
-const MOCK_REPORTS: Report[] = [
-  {
-    id: 4846,
-    location: "2700 Main St",
-    neighborhood: "Deep Ellum",
-    timestamp: "12 min ago",
-    status: "Reported",
-    severity: "Moderate",
-    description: "Pile of trash bags behind the mural wall near the parking lot.",
-    coords: { lat: 32.784, lng: -96.783 },
-  },
-  {
-    id: 4845,
-    location: "1300 S Beckley Ave",
-    neighborhood: "Oak Cliff",
-    timestamp: "34 min ago",
-    status: "Assigned",
-    severity: "Major",
-    description: "Illegal dump site near vacant lot. Mattress, tires, and construction debris.",
-    coords: { lat: 32.738, lng: -96.826 },
-  },
-  {
-    id: 4844,
-    location: "3800 Parry Ave",
-    neighborhood: "Fair Park",
-    timestamp: "1 hr ago",
-    status: "In Progress",
-    severity: "Minor",
-    description: "Fast food wrappers and cups scattered along the sidewalk.",
-    coords: { lat: 32.778, lng: -96.762 },
-  },
-  {
-    id: 4843,
-    location: "10200 Harry Hines Blvd",
-    neighborhood: "Harry Hines",
-    timestamp: "1 hr ago",
-    status: "Reported",
-    severity: "Moderate",
-    description: "Overflowing dumpster with bags spilling onto the sidewalk.",
-    coords: { lat: 32.862, lng: -96.871 },
-  },
-  {
-    id: 4842,
-    location: "700 N Pearl St",
-    neighborhood: "Arts District",
-    timestamp: "2 hr ago",
-    status: "Swept",
-    severity: "Minor",
-    description: "Cigarette butts and coffee cups near the bus stop bench.",
-    coords: { lat: 32.789, lng: -96.798 },
-  },
-  {
-    id: 4841,
-    location: "4500 Columbia Ave",
-    neighborhood: "Lakewood",
-    timestamp: "2 hr ago",
-    status: "In Progress",
-    severity: "Moderate",
-    description: "Broken glass and litter along the jogging trail by White Rock Creek.",
-    coords: { lat: 32.811, lng: -96.742 },
-  },
-  {
-    id: 4840,
-    location: "1500 Marilla St",
-    neighborhood: "Cedars",
-    timestamp: "3 hr ago",
-    status: "Assigned",
-    severity: "Major",
-    description: "Large pile of household furniture and bags dumped behind the warehouse.",
-    coords: { lat: 32.771, lng: -96.797 },
-  },
-  {
-    id: 4839,
-    location: "8300 Park Ln",
-    neighborhood: "Vickery Meadow",
-    timestamp: "4 hr ago",
-    status: "Swept",
-    severity: "Moderate",
-    description: "Scattered trash around apartment complex dumpster area.",
-    coords: { lat: 32.874, lng: -96.769 },
-  },
-  {
-    id: 4838,
-    location: "600 Greenville Ave",
-    neighborhood: "Lower Greenville",
-    timestamp: "5 hr ago",
-    status: "Swept",
-    severity: "Minor",
-    description: "Beer cans and paper plates left after weekend sidewalk party.",
-    coords: { lat: 32.818, lng: -96.771 },
-  },
-  {
-    id: 4837,
-    location: "2900 Swiss Ave",
-    neighborhood: "East Dallas",
-    timestamp: "6 hr ago",
-    status: "Reported",
-    severity: "Minor",
-    description: "Plastic bags caught in tree branches and scattered on median.",
-    coords: { lat: 32.787, lng: -96.779 },
-  },
-];
-
-// ---------------------------------------------------------------------------
-// Map pin positions (percentage based, mock layout of Dallas area)
-// ---------------------------------------------------------------------------
-
-const MAP_PINS = MOCK_REPORTS.map((r) => ({
-  id: r.id,
-  // Normalize to 0-100 range for display
-  x: ((r.coords.lng + 96.9) / 0.2) * 100,
-  y: ((32.9 - r.coords.lat) / 0.2) * 100,
-  severity: r.severity,
-  status: r.status,
-}));
+import { supabase, DbReport } from "@/lib/supabase";
+import GoogleMap from "@/components/GoogleMap";
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -180,8 +50,9 @@ const SEVERITY_CONFIG = {
 export default function ReportPage() {
   // Form state
   const [photo, setPhoto] = useState<string | null>(null);
+  const [photoFile, setPhotoFile] = useState<File | null>(null);
   const [photoName, setPhotoName] = useState<string>("");
-  const [locationMode, setLocationMode] = useState<"auto" | "manual">("auto");
+  const [locationMode, setLocationMode] = useState<"auto" | "manual" | "map">("auto");
   const [locating, setLocating] = useState(false);
   const [address, setAddress] = useState("");
   const [coords, setCoords] = useState<{ lat: number; lng: number } | null>(null);
@@ -189,14 +60,50 @@ export default function ReportPage() {
   const [description, setDescription] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [submitted, setSubmitted] = useState(false);
+  const [reportId, setReportId] = useState<string>("");
   const [dragOver, setDragOver] = useState(false);
+
+  // Live reports from database
+  const [reports, setReports] = useState<DbReport[]>([]);
+  const [loadingReports, setLoadingReports] = useState(true);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
   const formRef = useRef<HTMLDivElement>(null);
 
+  // Fetch reports from Supabase
+  useEffect(() => {
+    async function fetchReports() {
+      const { data, error } = await supabase
+        .from("reports")
+        .select("*")
+        .order("created_at", { ascending: false })
+        .limit(20);
+
+      if (data && !error) {
+        setReports(data);
+      }
+      setLoadingReports(false);
+    }
+    fetchReports();
+
+    // Real-time subscription
+    const channel = supabase
+      .channel("reports-realtime")
+      .on("postgres_changes", { event: "INSERT", schema: "public", table: "reports" }, (payload) => {
+        setReports((prev) => [payload.new as DbReport, ...prev].slice(0, 20));
+      })
+      .on("postgres_changes", { event: "UPDATE", schema: "public", table: "reports" }, (payload) => {
+        setReports((prev) => prev.map((r) => (r.id === (payload.new as DbReport).id ? (payload.new as DbReport) : r)));
+      })
+      .subscribe();
+
+    return () => { supabase.removeChannel(channel); };
+  }, []);
+
   // Photo handling
   const handleFileSelect = useCallback((file: File) => {
     if (!file.type.startsWith("image/")) return;
+    setPhotoFile(file);
     setPhotoName(file.name);
     const reader = new FileReader();
     reader.onload = (e) => setPhoto(e.target?.result as string);
@@ -226,50 +133,134 @@ export default function ReportPage() {
     setLocating(true);
     if ("geolocation" in navigator) {
       navigator.geolocation.getCurrentPosition(
-        (pos) => {
-          setCoords({ lat: pos.coords.latitude, lng: pos.coords.longitude });
-          // Mock reverse geocode
-          setAddress("2417 Commerce St, Dallas, TX 75201");
+        async (pos) => {
+          const lat = pos.coords.latitude;
+          const lng = pos.coords.longitude;
+          setCoords({ lat, lng });
+          // Try reverse geocoding
+          try {
+            const resp = await fetch(
+              `https://maps.googleapis.com/maps/api/geocode/json?latlng=${lat},${lng}&key=${process.env.NEXT_PUBLIC_GOOGLE_MAPS_KEY}`
+            );
+            const data = await resp.json();
+            if (data.results?.[0]) {
+              setAddress(data.results[0].formatted_address);
+            } else {
+              setAddress(`${lat.toFixed(4)}, ${lng.toFixed(4)}`);
+            }
+          } catch {
+            setAddress(`${lat.toFixed(4)}, ${lng.toFixed(4)}`);
+          }
           setLocating(false);
         },
         () => {
-          // Fallback mock
-          setCoords({ lat: 32.782, lng: -96.797 });
-          setAddress("2417 Commerce St, Dallas, TX 75201");
+          // Fallback to Dallas center
+          setCoords({ lat: 32.7767, lng: -96.7970 });
+          setAddress("Dallas, TX (approximate)");
           setLocating(false);
         },
         { enableHighAccuracy: true, timeout: 8000 }
       );
     } else {
-      setCoords({ lat: 32.782, lng: -96.797 });
-      setAddress("2417 Commerce St, Dallas, TX 75201");
+      setCoords({ lat: 32.7767, lng: -96.7970 });
+      setAddress("Dallas, TX (approximate)");
       setLocating(false);
     }
   }, []);
 
-  // Submit
-  const handleSubmit = useCallback(() => {
-    setSubmitting(true);
-    setTimeout(() => {
-      setSubmitting(false);
-      setSubmitted(true);
-    }, 1800);
+  // Handle pin drop on map
+  const handlePinDrop = useCallback(async (lat: number, lng: number) => {
+    setCoords({ lat, lng });
+    try {
+      const resp = await fetch(
+        `https://maps.googleapis.com/maps/api/geocode/json?latlng=${lat},${lng}&key=${process.env.NEXT_PUBLIC_GOOGLE_MAPS_KEY}`
+      );
+      const data = await resp.json();
+      if (data.results?.[0]) {
+        setAddress(data.results[0].formatted_address);
+      } else {
+        setAddress(`${lat.toFixed(4)}, ${lng.toFixed(4)}`);
+      }
+    } catch {
+      setAddress(`${lat.toFixed(4)}, ${lng.toFixed(4)}`);
+    }
   }, []);
+
+  // Submit to Supabase
+  const handleSubmit = useCallback(async () => {
+    if (!coords || !severity) return;
+    setSubmitting(true);
+
+    try {
+      let photoUrl: string | null = null;
+
+      // Upload photo if we have one
+      if (photoFile) {
+        const fileName = `${Date.now()}-${Math.random().toString(36).slice(2)}.${photoFile.name.split(".").pop()}`;
+        const { data: uploadData, error: uploadError } = await supabase.storage
+          .from("report-photos")
+          .upload(fileName, photoFile, { contentType: photoFile.type });
+
+        if (uploadData && !uploadError) {
+          const { data: urlData } = supabase.storage.from("report-photos").getPublicUrl(fileName);
+          photoUrl = urlData.publicUrl;
+        }
+      }
+
+      // Insert report
+      const { data, error } = await supabase
+        .from("reports")
+        .insert({
+          photo_url: photoUrl,
+          latitude: coords.lat,
+          longitude: coords.lng,
+          address: address || `${coords.lat.toFixed(4)}, ${coords.lng.toFixed(4)}`,
+          severity,
+          description: description || "",
+          status: "Reported",
+          neighborhood: "",
+        })
+        .select()
+        .single();
+
+      if (data && !error) {
+        setReportId(data.id);
+        setSubmitted(true);
+      } else {
+        alert("Failed to submit report. Please try again.");
+      }
+    } catch {
+      alert("Failed to submit report. Please try again.");
+    }
+
+    setSubmitting(false);
+  }, [coords, severity, photoFile, address, description]);
 
   // Reset form
   const handleNewReport = useCallback(() => {
     setPhoto(null);
+    setPhotoFile(null);
     setPhotoName("");
     setAddress("");
     setCoords(null);
     setSeverity(null);
     setDescription("");
     setSubmitted(false);
+    setReportId("");
     setLocationMode("auto");
     formRef.current?.scrollIntoView({ behavior: "smooth" });
   }, []);
 
   const canSubmit = photo && (address || coords) && severity;
+
+  // Map markers from live reports
+  const mapMarkers = reports.map((r) => ({
+    id: r.id,
+    lat: r.latitude,
+    lng: r.longitude,
+    severity: r.severity,
+    status: r.status,
+  }));
 
   // -------------------------------------------------------------------------
   // Success screen
@@ -287,7 +278,7 @@ export default function ReportPage() {
               </div>
             </div>
             <h1 className="text-3xl font-bold text-white mb-2">Report Submitted!</h1>
-            <p className="text-lg text-swept-green font-mono mb-1">Report #4,847</p>
+            <p className="text-lg text-swept-green font-mono mb-1">Report #{reportId.slice(0, 8)}</p>
             <p className="text-gray-400 mb-8 leading-relaxed">
               We&apos;ll notify you when this spot is <span className="text-swept-green font-semibold">Swept</span>. Our crew coordination system is already matching this to the nearest available team.
             </p>
@@ -320,9 +311,7 @@ export default function ReportPage() {
       <Header />
 
       <main className="max-w-2xl mx-auto px-4 pb-24">
-        {/* ----------------------------------------------------------------- */}
-        {/* REPORT FORM                                                        */}
-        {/* ----------------------------------------------------------------- */}
+        {/* REPORT FORM */}
         <div ref={formRef} className="pt-6 pb-2">
           <h1 className="text-2xl sm:text-3xl font-bold text-white mb-1">Report Trash</h1>
           <p className="text-gray-400 text-sm mb-6">
@@ -376,7 +365,7 @@ export default function ReportPage() {
                       <span className="truncate max-w-[200px]">{photoName}</span>
                     </div>
                     <button
-                      onClick={() => { setPhoto(null); setPhotoName(""); }}
+                      onClick={() => { setPhoto(null); setPhotoFile(null); setPhotoName(""); }}
                       className="p-1.5 rounded-lg bg-red-500/20 text-red-400 hover:bg-red-500/30 transition-colors"
                     >
                       <X className="w-4 h-4" />
@@ -390,26 +379,19 @@ export default function ReportPage() {
           {/* --- Step 2: Location ----------------------------------------- */}
           <FormSection number={2} title="Where Is It?">
             <div className="flex gap-2 mb-3">
-              <button
-                onClick={() => setLocationMode("auto")}
-                className={`flex-1 py-2 px-3 rounded-lg text-sm font-medium transition-colors ${
-                  locationMode === "auto"
-                    ? "bg-swept-green/15 text-swept-green border border-swept-green/30"
-                    : "bg-swept-gray text-gray-400 border border-gray-800 hover:border-gray-600"
-                }`}
-              >
-                Auto-detect
-              </button>
-              <button
-                onClick={() => setLocationMode("manual")}
-                className={`flex-1 py-2 px-3 rounded-lg text-sm font-medium transition-colors ${
-                  locationMode === "manual"
-                    ? "bg-swept-green/15 text-swept-green border border-swept-green/30"
-                    : "bg-swept-gray text-gray-400 border border-gray-800 hover:border-gray-600"
-                }`}
-              >
-                Enter Address
-              </button>
+              {(["auto", "map", "manual"] as const).map((mode) => (
+                <button
+                  key={mode}
+                  onClick={() => setLocationMode(mode)}
+                  className={`flex-1 py-2 px-3 rounded-lg text-sm font-medium transition-colors ${
+                    locationMode === mode
+                      ? "bg-swept-green/15 text-swept-green border border-swept-green/30"
+                      : "bg-swept-gray text-gray-400 border border-gray-800 hover:border-gray-600"
+                  }`}
+                >
+                  {mode === "auto" ? "Auto-detect" : mode === "map" ? "Drop Pin" : "Enter Address"}
+                </button>
+              ))}
             </div>
 
             {locationMode === "auto" ? (
@@ -430,23 +412,25 @@ export default function ReportPage() {
                     </span>
                   </button>
                 ) : (
-                  <div className="flex items-start gap-3 p-4 rounded-xl bg-swept-green/5 border border-swept-green/20">
-                    <MapPin className="w-5 h-5 text-swept-green flex-shrink-0 mt-0.5" />
-                    <div className="flex-1 min-w-0">
-                      <p className="text-white font-medium text-sm">{address}</p>
-                      <p className="text-gray-500 text-xs mt-0.5 font-mono">
-                        {coords.lat.toFixed(4)}, {coords.lng.toFixed(4)}
-                      </p>
-                    </div>
-                    <button
-                      onClick={() => { setCoords(null); setAddress(""); }}
-                      className="text-gray-500 hover:text-gray-300 transition-colors"
-                    >
-                      <X className="w-4 h-4" />
-                    </button>
-                  </div>
+                  <LocationResult address={address} coords={coords} onClear={() => { setCoords(null); setAddress(""); }} />
                 )}
               </>
+            ) : locationMode === "map" ? (
+              <div className="space-y-3">
+                <p className="text-gray-500 text-xs">Tap the map to drop a pin at the trash location.</p>
+                <GoogleMap
+                  center={{ lat: 32.7767, lng: -96.7970 }}
+                  zoom={12}
+                  markers={mapMarkers}
+                  droppedPin={coords}
+                  onPinDrop={handlePinDrop}
+                  className="w-full aspect-[4/3]"
+                  interactive
+                />
+                {coords && (
+                  <LocationResult address={address} coords={coords} onClear={() => { setCoords(null); setAddress(""); }} />
+                )}
+              </div>
             ) : (
               <div className="relative">
                 <MapPin className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-500" />
@@ -555,82 +539,22 @@ export default function ReportPage() {
           <div className="flex items-center gap-2 mb-4">
             <MapPinned className="w-5 h-5 text-swept-green" />
             <h2 className="text-xl font-bold text-white">Report Map</h2>
+            <span className="ml-auto flex items-center gap-1.5 text-xs text-swept-green">
+              <span className="relative flex h-2 w-2">
+                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-swept-green opacity-75" />
+                <span className="relative inline-flex rounded-full h-2 w-2 bg-swept-green" />
+              </span>
+              Live
+            </span>
           </div>
 
-          <div className="relative w-full aspect-[16/10] rounded-2xl bg-swept-gray border border-gray-800 overflow-hidden">
-            {/* Grid lines */}
-            <div className="absolute inset-0 opacity-10">
-              {Array.from({ length: 8 }).map((_, i) => (
-                <div key={`h-${i}`} className="absolute left-0 right-0 border-t border-gray-500" style={{ top: `${(i + 1) * 11.1}%` }} />
-              ))}
-              {Array.from({ length: 12 }).map((_, i) => (
-                <div key={`v-${i}`} className="absolute top-0 bottom-0 border-l border-gray-500" style={{ left: `${(i + 1) * 7.7}%` }} />
-              ))}
-            </div>
-
-            {/* Road mockups */}
-            <div className="absolute top-[40%] left-0 right-0 h-[2px] bg-gray-700/60" />
-            <div className="absolute top-[60%] left-0 right-0 h-[2px] bg-gray-700/60" />
-            <div className="absolute left-[30%] top-0 bottom-0 w-[2px] bg-gray-700/60" />
-            <div className="absolute left-[55%] top-0 bottom-0 w-[2px] bg-gray-700/60" />
-            <div className="absolute left-[75%] top-0 bottom-0 w-[2px] bg-gray-700/60" />
-
-            {/* Area labels */}
-            <span className="absolute top-[12%] left-[15%] text-[10px] text-gray-600 font-mono">Harry Hines</span>
-            <span className="absolute top-[25%] left-[60%] text-[10px] text-gray-600 font-mono">Vickery Meadow</span>
-            <span className="absolute top-[38%] left-[62%] text-[10px] text-gray-600 font-mono">Lakewood</span>
-            <span className="absolute top-[50%] left-[22%] text-[10px] text-gray-600 font-mono">Arts District</span>
-            <span className="absolute top-[48%] left-[50%] text-[10px] text-gray-600 font-mono">Deep Ellum</span>
-            <span className="absolute top-[55%] left-[70%] text-[10px] text-gray-600 font-mono">Fair Park</span>
-            <span className="absolute top-[68%] left-[28%] text-[10px] text-gray-600 font-mono">Cedars</span>
-            <span className="absolute top-[80%] left-[20%] text-[10px] text-gray-600 font-mono">Oak Cliff</span>
-            <span className="absolute top-[42%] left-[38%] text-[10px] text-gray-600 font-mono">Lower Greenville</span>
-            <span className="absolute top-[52%] left-[36%] text-[10px] text-gray-600 font-mono">East Dallas</span>
-
-            {/* Pins */}
-            {MAP_PINS.map((pin) => {
-              const clampX = Math.max(5, Math.min(95, pin.x));
-              const clampY = Math.max(5, Math.min(95, pin.y));
-              const pinColor =
-                pin.status === "Swept"
-                  ? "bg-swept-green"
-                  : pin.severity === "Major"
-                  ? "bg-red-500"
-                  : pin.severity === "Moderate"
-                  ? "bg-orange-500"
-                  : "bg-yellow-500";
-              return (
-                <div
-                  key={pin.id}
-                  className="absolute -translate-x-1/2 -translate-y-1/2 group"
-                  style={{ left: `${clampX}%`, top: `${clampY}%` }}
-                >
-                  {pin.status !== "Swept" && (
-                    <div className={`absolute inset-0 w-4 h-4 -m-0.5 rounded-full ${pinColor} opacity-30 animate-ping`} />
-                  )}
-                  <div className={`relative w-3 h-3 rounded-full ${pinColor} border-2 border-swept-dark shadow-lg cursor-pointer`} />
-                  <div className="absolute bottom-full mb-2 left-1/2 -translate-x-1/2 hidden group-hover:block z-10">
-                    <div className="bg-swept-dark border border-gray-700 rounded-lg px-2 py-1 text-[10px] text-gray-300 whitespace-nowrap shadow-xl">
-                      #{pin.id} &middot; {pin.severity}
-                    </div>
-                  </div>
-                </div>
-              );
-            })}
-
-            {/* Legend */}
-            <div className="absolute bottom-3 right-3 bg-swept-dark/90 border border-gray-800 rounded-lg p-2 flex gap-3 text-[10px]">
-              <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-yellow-500" /> Minor</span>
-              <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-orange-500" /> Moderate</span>
-              <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-red-500" /> Major</span>
-              <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-swept-green" /> Swept</span>
-            </div>
-
-            {/* Label */}
-            <div className="absolute top-3 left-3 bg-swept-dark/80 border border-gray-800 rounded-lg px-2 py-1">
-              <span className="text-[10px] text-gray-400 font-mono">DALLAS, TX &mdash; LIVE</span>
-            </div>
-          </div>
+          <GoogleMap
+            center={{ lat: 32.7767, lng: -96.7970 }}
+            zoom={11}
+            markers={mapMarkers}
+            className="w-full aspect-[16/10]"
+            interactive={false}
+          />
         </section>
 
         {/* ----------------------------------------------------------------- */}
@@ -647,62 +571,81 @@ export default function ReportPage() {
                 <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-swept-green opacity-75" />
                 <span className="relative inline-flex rounded-full h-2 w-2 bg-swept-green" />
               </span>
-              {MOCK_REPORTS.length} recent
+              {loadingReports ? "Loading..." : `${reports.length} recent`}
             </div>
           </div>
 
-          <div className="space-y-3">
-            {MOCK_REPORTS.map((report) => {
-              const statusCfg = STATUS_CONFIG[report.status];
-              const StatusIcon = statusCfg.icon;
-              const severityCfg = SEVERITY_CONFIG[report.severity];
-              return (
-                <div
-                  key={report.id}
-                  className="flex gap-3 p-3 rounded-xl bg-swept-gray/60 border border-gray-800/80 hover:border-gray-700 transition-colors group cursor-pointer"
-                >
-                  {/* Thumbnail placeholder */}
-                  <div className="w-16 h-16 sm:w-20 sm:h-20 rounded-lg bg-swept-dark flex-shrink-0 flex items-center justify-center overflow-hidden border border-gray-800">
-                    <div className="flex flex-col items-center gap-1">
-                      <Camera className="w-5 h-5 text-gray-700" />
-                      <span className="text-[8px] text-gray-700 font-mono">#{report.id}</span>
+          {loadingReports ? (
+            <div className="flex items-center justify-center py-12">
+              <Loader2 className="w-6 h-6 text-swept-green animate-spin" />
+            </div>
+          ) : reports.length === 0 ? (
+            <div className="text-center py-12 text-gray-500">
+              <Trash2 className="w-8 h-8 mx-auto mb-2 opacity-50" />
+              <p>No reports yet. Be the first to report!</p>
+            </div>
+          ) : (
+            <div className="space-y-3">
+              {reports.map((report) => {
+                const statusCfg = STATUS_CONFIG[report.status];
+                const StatusIcon = statusCfg.icon;
+                const severityCfg = SEVERITY_CONFIG[report.severity];
+                const timeAgo = getTimeAgo(report.created_at);
+                return (
+                  <div
+                    key={report.id}
+                    className="flex gap-3 p-3 rounded-xl bg-swept-gray/60 border border-gray-800/80 hover:border-gray-700 transition-colors group cursor-pointer"
+                  >
+                    {/* Thumbnail */}
+                    <div className="w-16 h-16 sm:w-20 sm:h-20 rounded-lg bg-swept-dark flex-shrink-0 flex items-center justify-center overflow-hidden border border-gray-800">
+                      {report.photo_url ? (
+                        // eslint-disable-next-line @next/next/no-img-element
+                        <img src={report.photo_url} alt="" className="w-full h-full object-cover" />
+                      ) : (
+                        <div className="flex flex-col items-center gap-1">
+                          <Camera className="w-5 h-5 text-gray-700" />
+                          <span className="text-[8px] text-gray-700 font-mono">#{report.id.slice(0, 6)}</span>
+                        </div>
+                      )}
                     </div>
-                  </div>
 
-                  {/* Content */}
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-start justify-between gap-2">
-                      <div className="min-w-0">
-                        <div className="flex items-center gap-2">
-                          <p className="text-white font-medium text-sm truncate">{report.location}</p>
-                          <span className={`text-[10px] font-mono px-1.5 py-0.5 rounded ${severityCfg.color} ${severityCfg.text}`}>
-                            {report.severity}
+                    {/* Content */}
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-start justify-between gap-2">
+                        <div className="min-w-0">
+                          <div className="flex items-center gap-2">
+                            <p className="text-white font-medium text-sm truncate">{report.address}</p>
+                            <span className={`text-[10px] font-mono px-1.5 py-0.5 rounded ${severityCfg.color} ${severityCfg.text}`}>
+                              {report.severity}
+                            </span>
+                          </div>
+                          <p className="text-gray-500 text-xs mt-0.5">{report.neighborhood || "Dallas, TX"}</p>
+                        </div>
+                        <ChevronRight className="w-4 h-4 text-gray-700 group-hover:text-gray-500 flex-shrink-0 mt-1 transition-colors" />
+                      </div>
+
+                      {report.description && (
+                        <p className="text-gray-400 text-xs mt-1.5 line-clamp-1">{report.description}</p>
+                      )}
+
+                      <div className="flex items-center justify-between mt-2">
+                        <div className="flex items-center gap-1.5">
+                          <StatusIcon className={`w-3 h-3 ${statusCfg.textColor}`} />
+                          <span className={`text-xs font-medium ${statusCfg.textColor}`}>
+                            {report.status === "Swept" ? "Swept \u2713" : report.status}
                           </span>
                         </div>
-                        <p className="text-gray-500 text-xs mt-0.5">{report.neighborhood}</p>
-                      </div>
-                      <ChevronRight className="w-4 h-4 text-gray-700 group-hover:text-gray-500 flex-shrink-0 mt-1 transition-colors" />
-                    </div>
-
-                    <p className="text-gray-400 text-xs mt-1.5 line-clamp-1">{report.description}</p>
-
-                    <div className="flex items-center justify-between mt-2">
-                      <div className="flex items-center gap-1.5">
-                        <StatusIcon className={`w-3 h-3 ${statusCfg.textColor}`} />
-                        <span className={`text-xs font-medium ${statusCfg.textColor}`}>
-                          {report.status === "Swept" ? "Swept \u2713" : report.status}
-                        </span>
-                      </div>
-                      <div className="flex items-center gap-1 text-gray-600 text-xs">
-                        <Clock className="w-3 h-3" />
-                        {report.timestamp}
+                        <div className="flex items-center gap-1 text-gray-600 text-xs">
+                          <Clock className="w-3 h-3" />
+                          {timeAgo}
+                        </div>
                       </div>
                     </div>
                   </div>
-                </div>
-              );
-            })}
-          </div>
+                );
+              })}
+            </div>
+          )}
         </section>
       </main>
     </div>
@@ -750,4 +693,34 @@ function FormSection({ number, title, optional, children }: { number: number; ti
       {children}
     </div>
   );
+}
+
+function LocationResult({ address, coords, onClear }: { address: string; coords: { lat: number; lng: number }; onClear: () => void }) {
+  return (
+    <div className="flex items-start gap-3 p-4 rounded-xl bg-swept-green/5 border border-swept-green/20">
+      <MapPin className="w-5 h-5 text-swept-green flex-shrink-0 mt-0.5" />
+      <div className="flex-1 min-w-0">
+        <p className="text-white font-medium text-sm">{address}</p>
+        <p className="text-gray-500 text-xs mt-0.5 font-mono">
+          {coords.lat.toFixed(4)}, {coords.lng.toFixed(4)}
+        </p>
+      </div>
+      <button onClick={onClear} className="text-gray-500 hover:text-gray-300 transition-colors">
+        <X className="w-4 h-4" />
+      </button>
+    </div>
+  );
+}
+
+function getTimeAgo(dateStr: string): string {
+  const now = Date.now();
+  const then = new Date(dateStr).getTime();
+  const diffMs = now - then;
+  const diffMin = Math.floor(diffMs / 60000);
+  if (diffMin < 1) return "Just now";
+  if (diffMin < 60) return `${diffMin} min ago`;
+  const diffHr = Math.floor(diffMin / 60);
+  if (diffHr < 24) return `${diffHr} hr ago`;
+  const diffDay = Math.floor(diffHr / 24);
+  return `${diffDay}d ago`;
 }

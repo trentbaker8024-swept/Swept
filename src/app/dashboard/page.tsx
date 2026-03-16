@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import {
   Trash2,
   Users,
@@ -28,11 +28,14 @@ import {
   Zap,
   Award,
   Activity,
+  Loader2,
 } from "lucide-react";
+import { supabase, DbReport } from "@/lib/supabase";
+import GoogleMap from "@/components/GoogleMap";
 
-/* ─── Mock Data ─── */
+/* ─── Fallback Mock Data (used when DB is empty) ─── */
 
-const reportRows = [
+const FALLBACK_REPORTS = [
   { id: "RPT-4821", location: "Main St & Elm Ave", severity: "High", status: "Resolved", crew: "Alpha-7", reported: "Mar 15, 8:12 AM", resolved: "Mar 15, 11:45 AM" },
   { id: "RPT-4820", location: "Commerce St Bridge", severity: "Critical", status: "In Progress", crew: "Bravo-3", reported: "Mar 15, 7:30 AM", resolved: "—" },
   { id: "RPT-4819", location: "Deep Ellum Alley #4", severity: "Medium", status: "Resolved", crew: "Delta-1", reported: "Mar 14, 6:22 PM", resolved: "Mar 14, 9:10 PM" },
@@ -159,6 +162,64 @@ function ZoneDot({ zone }: { zone: typeof zones[number] }) {
 export default function DashboardPage() {
   const [statusFilter, setStatusFilter] = useState("All");
   const [severityFilter, setSeverityFilter] = useState("All");
+  const [dbReports, setDbReports] = useState<DbReport[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [stats, setStats] = useState({ total: 0, resolved: 0, pending: 0, inProgress: 0 });
+
+  // Fetch live data from Supabase
+  useEffect(() => {
+    async function fetchData() {
+      const { data, error } = await supabase
+        .from("reports")
+        .select("*")
+        .order("created_at", { ascending: false })
+        .limit(50);
+
+      if (data && !error) {
+        setDbReports(data);
+        setStats({
+          total: data.length,
+          resolved: data.filter((r) => r.status === "Swept").length,
+          pending: data.filter((r) => r.status === "Reported").length,
+          inProgress: data.filter((r) => r.status === "In Progress" || r.status === "Assigned").length,
+        });
+      }
+      setLoading(false);
+    }
+    fetchData();
+
+    // Real-time subscription
+    const channel = supabase
+      .channel("dashboard-realtime")
+      .on("postgres_changes", { event: "*", schema: "public", table: "reports" }, () => {
+        fetchData();
+      })
+      .subscribe();
+
+    return () => { supabase.removeChannel(channel); };
+  }, []);
+
+  // Convert DB reports to table rows, or fall back to mock data
+  const reportRows = dbReports.length > 0
+    ? dbReports.map((r) => ({
+        id: `RPT-${r.id.slice(0, 4)}`,
+        location: r.address,
+        severity: r.severity === "Major" ? "Critical" : r.severity === "Moderate" ? "High" : r.severity === "Minor" ? "Medium" : r.severity,
+        status: r.status === "Swept" ? "Resolved" : r.status,
+        crew: "—",
+        reported: new Date(r.created_at).toLocaleDateString("en-US", { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" }),
+        resolved: r.status === "Swept" ? "Resolved" : "—",
+      }))
+    : FALLBACK_REPORTS;
+
+  // Map markers from DB
+  const mapMarkers = dbReports.map((r) => ({
+    id: r.id,
+    lat: r.latitude,
+    lng: r.longitude,
+    severity: r.severity,
+    status: r.status,
+  }));
 
   const filteredReports = reportRows.filter((r) => {
     if (statusFilter !== "All" && r.status !== statusFilter) return false;
@@ -282,7 +343,7 @@ export default function DashboardPage() {
               </div>
             </div>
             <div className="mt-4">
-              <div className="text-3xl font-bold tracking-tight">12,847</div>
+              <div className="text-3xl font-bold tracking-tight">{stats.total > 0 ? stats.resolved.toLocaleString() : "12,847"}</div>
               <div className="text-sm text-white/40 mt-0.5">Reports Resolved</div>
               <div className="text-xs text-white/30 mt-1">Avg response: 4.2 hours</div>
             </div>
@@ -335,40 +396,13 @@ export default function DashboardPage() {
               </div>
             </div>
           </div>
-          <div className="relative h-[400px] bg-[#0d1117] overflow-hidden">
-            {/* Grid overlay */}
-            <div className="absolute inset-0 opacity-[0.04]" style={{
-              backgroundImage: "linear-gradient(white 1px, transparent 1px), linear-gradient(90deg, white 1px, transparent 1px)",
-              backgroundSize: "40px 40px",
-            }} />
-            {/* Radial glow behind city center */}
-            <div className="absolute left-[42%] top-[35%] w-64 h-64 -translate-x-1/2 -translate-y-1/2 bg-swept-green/5 rounded-full blur-3xl" />
-            {/* Road-like lines */}
-            <svg className="absolute inset-0 w-full h-full opacity-10" xmlns="http://www.w3.org/2000/svg">
-              <line x1="0" y1="50%" x2="100%" y2="50%" stroke="white" strokeWidth="1" />
-              <line x1="42%" y1="0" x2="42%" y2="100%" stroke="white" strokeWidth="1" />
-              <line x1="10%" y1="20%" x2="80%" y2="70%" stroke="white" strokeWidth="0.5" />
-              <line x1="20%" y1="80%" x2="75%" y2="15%" stroke="white" strokeWidth="0.5" />
-              <line x1="5%" y1="35%" x2="95%" y2="35%" stroke="white" strokeWidth="0.5" />
-              <line x1="55%" y1="5%" x2="55%" y2="95%" stroke="white" strokeWidth="0.5" />
-              {/* Trinity River curve */}
-              <path d="M 15% 10% Q 35% 50%, 25% 90%" fill="none" stroke="#39FF14" strokeWidth="1" opacity="0.3" />
-            </svg>
-            {/* Zone dots */}
-            {zones.map((z) => (
-              <ZoneDot key={z.name} zone={z} />
-            ))}
-            {/* Zone labels */}
-            {zones.map((z) => (
-              <div
-                key={`label-${z.name}`}
-                className="absolute text-[10px] text-white/25 font-medium pointer-events-none"
-                style={{ left: z.x, top: z.y, transform: "translate(-50%, 14px)" }}
-              >
-                {z.name.split(": ")[1]}
-              </div>
-            ))}
-          </div>
+          <GoogleMap
+            center={{ lat: 32.7767, lng: -96.7970 }}
+            zoom={11}
+            markers={mapMarkers}
+            className="w-full h-[400px]"
+            interactive={false}
+          />
         </section>
 
         {/* ───────── REPORTS QUEUE ───────── */}
