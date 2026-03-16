@@ -286,7 +286,7 @@ export default function BringSweptPage() {
     },
     {
       name: "City Standard",
-      price: "$450K",
+      price: "$250K",
       period: "/month",
       details: "3-5 zones  ·  6-10 crews  ·  Annual contract",
       features: [

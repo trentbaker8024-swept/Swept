@@ -377,7 +377,7 @@ async function buildDeck() {
   const streams = [
     {
       pct: "70%", title: "Government Contracts",
-      desc: "Monthly service agreements per zone/district.\nExisting public works budgets.\nNo new taxes required. $135K-$450K/mo per city.",
+      desc: "Monthly service agreements per zone/district.\nExisting public works budgets.\nNo new taxes required. $135K-$250K/mo per city.",
       color: GREEN
     },
     {
@@ -413,7 +413,7 @@ async function buildDeck() {
   });
 
   // Bottom note
-  s7.addText("At 10 cities, 5 zones each, $450K/month avg = $54M/year in revenue", {
+  s7.addText("At 10 cities, 5 zones each, $250K/month avg = $30M/year in revenue", {
     x: 0.8, y: 5.1, w: 8.4, h: 0.4,
     fontSize: 13, fontFace: "Arial", color: GREEN, bold: true, margin: 0
   });
@@ -435,7 +435,7 @@ async function buildDeck() {
 
   const tiers = [
     { name: "PILOT", price: "$135K", period: "/month", detail: "1 zone  |  2 crews  |  3-month trial", highlight: false },
-    { name: "CITY STANDARD", price: "$450K", period: "/month", detail: "3-5 zones  |  6-10 crews  |  Annual", highlight: true },
+    { name: "CITY STANDARD", price: "$250K", period: "/month", detail: "3-5 zones  |  6-10 crews  |  Annual", highlight: true },
     { name: "METRO SCALE", price: "Custom", period: "", detail: "10+ zones  |  20+ crews  |  Multi-year", highlight: false },
   ];
   tiers.forEach((t, i) => {
@@ -650,7 +650,7 @@ async function buildDeck() {
 
   // 4 bottom stats
   const closingStats = [
-    { icon: icons.dollarWhite, num: "$54M+", label: "ARR Target" },
+    { icon: icons.dollarWhite, num: "$30M+", label: "ARR Target" },
     { icon: icons.usersWhite, num: "200+", label: "Jobs per City" },
     { icon: icons.checkWhite, num: "94%", label: "Satisfaction" },
     { icon: icons.chartWhite, num: "34%", label: "Cost Savings" },
